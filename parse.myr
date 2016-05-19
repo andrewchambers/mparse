@@ -135,7 +135,7 @@ const dcltype = {ts, dcl
 	match tokpeek(ts)
 	| (l, `Tcolon):
 		toknext(ts)
-		match tyname(ts)
+		match tycomplex(ts)
 		| `std.Some t:	dcl.ty = t
 		| `std.None:	err(l, "expected type after ':'\n")
 		;;
@@ -285,7 +285,7 @@ const castexpr = {ts
 			| (pl, badtok):	err(l, "expected '(' after 'castto', got {}\n", badtok)
 			;;
 
-			match tyname(ts)
+			match tycomplex(ts)
 			| `std.Some t:	ty = t
 			| `std.None:	err(ts.loc, "expected type in castto near {}\n", tokpeekt(ts))
 			;;
@@ -573,7 +573,7 @@ const sizeofexpr = {ts, loc
 	| (l, badtok):	err(l, "expected '(' after sizeof, got {}\n", badtok)
 	;;
 
-	match tyname(ts)
+	match tycomplex(ts)
 	| `std.Some ty:	e = mkexpr(loc, `Osize ty)
 	| `std.None:	err(ts.loc, "expected type in sizeof, got {}\n", tokpeekt(ts))
 	;;
@@ -642,10 +642,77 @@ const name = {ts -> std.option(name)
 	-> `std.Some [.ns=ns, .name=n]
 }
 
-const tyname = {ts
+const tycomplex = {ts
+	match tokpeek(ts)
+	| (l, `Tstruct):	structbody(ts)
+	| (l, `Tunion):	unionbody(ts)
+	| (l, `Tident _):	toknext(ts)
+	| (l, tok):	err(l, "expected type, got {}", tok)
+	;;
 	-> `std.None
 }
 
+const structbody = {ts
+	var name
+	
+	match toknext(ts)
+	| (l, `Tstruct):
+	| (l, _):	err(l, "internal error")
+	;;
+	
+	optendlns(ts)
+	while true
+		match tokpeek(ts)
+		| (_, `Tident _):
+			match toknext(ts)
+			| (l, `Tident n): name = n
+			| (l, tok):	err(l, "expected ident, got {}", tok)
+			;;
+			match toknext(ts)
+			| (_, `Tcolon):
+			| (l, tok):	err(l, "expected ':', got {}", tok)
+			;;
+			tycomplex(ts)
+			endlns(ts)
+		| (l, `Tendblk): toknext(ts); break
+		| (l, tok):	err(l, "expected ident or ';;', got {}", tok)
+		;;
+	;;
+	
+	-> `Tystruct [][:]
+}
+
+const unionbody = {ts
+	
+	match toknext(ts)
+	| (l, `Tunion):
+	| (l, _):	err(l, "internal error")
+	;;
+	
+	optendlns(ts)
+	while true
+		match toknext(ts)
+		| (_, `Ttick):
+			match toknext(ts)
+			| (l, `Tident _):
+			| (l, tok):	 err(l, "expected ident, got {}", tok)
+			;;
+			match tokpeek(ts)
+			| (l, `Tendln):
+				endlns(ts)
+				continue
+			| _:
+			;;
+			tycomplex(ts)
+			endlns(ts)
+		| (l, `Tendblk):
+			break
+		| (l, tok):	err(l, "expected ';;' or ident, got {}", tok)
+		;;
+	;;
+	
+	-> `Tyunion [][:]
+}
 const optendlns = {ts
 	while true
 		match tokpeek(ts)
